@@ -1,0 +1,76 @@
+# ── Build artifacts ──────────────────────────────────────────────────────────
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+[Aa][Rr][Mm]/
+[Aa][Rr][Mm]64/
+bld/
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+out/
+build/
+dist/
+publish/
+*.dll
+*.exe
+*.pdb
+*.user
+*.suo
+*.cache
+*.nupkg
+
+# ── IDE and editor files ────────────────────────────────────────────────────
+.vs/
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-project
+*.sublime-workspace
+
+# ── OS files ─────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── Secrets and environment ──────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+
+# ── Runtime data ─────────────────────────────────────────────────────────────
+data/
+*.db
+*.sqlite
+*.sqlite3
+
+# ── Node / JavaScript (if applicable) ───────────────────────────────────────
+node_modules/
+.npm/
+.yarn/
+package-lock.json
+yarn.lock
+
+# ── Python (if applicable) ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ── Docker ───────────────────────────────────────────────────────────────────
+.docker/
+
+# ── Coverage and test results ────────────────────────────────────────────────
+coverage/
+TestResults/
+*.trx
+*.coveragexml

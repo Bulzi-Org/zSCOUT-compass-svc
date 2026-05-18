@@ -27,15 +27,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install .[dev]
 
-      - name: Generate protobuf
-        run: |
-          mkdir -p src/compass_svc/generated
-          python -m grpc_tools.protoc \
-            -Isrc/proto \
-            --python_out=src/compass_svc/generated \
-            --grpc_python_out=src/compass_svc/generated \
-            src/proto/compass.proto
-
       - name: Run tests
         run: pytest
 

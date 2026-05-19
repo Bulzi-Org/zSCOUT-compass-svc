@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
 import uvicorn
@@ -16,24 +17,30 @@ logger = logging.getLogger(__name__)
 
 def create_app(compass: CompassService) -> FastAPI:
 	"""Create the FastAPI application with compass endpoints."""
+
+	@asynccontextmanager
+	async def lifespan(app: FastAPI):
+		yield
+		logger.info("Shutting down — closing I2C bus")
+		compass.shutdown()
+
 	app = FastAPI(
 		title="zSCOUT Compass Service",
 		description="QMC5883L magnetometer REST+SSE API",
 		version="0.2.0",
+		lifespan=lifespan,
 	)
 
 	@app.get("/api/status")
 	def get_status() -> dict:
 		"""Device health check."""
 		status_info = compass.get_status()
-		reading = compass.driver.read()
-		from compass_svc.i2c_driver import STATUS_OVL
 		return {
 			"status": status_info["status"],
 			"device_address": status_info["device_address"],
 			"i2c_bus": int(status_info["i2c_bus"]),
 			"device_found": status_info["device_found"],
-			"overflow": bool(reading.status & STATUS_OVL),
+			"overflow": status_info["overflow"],
 			"timestamp": datetime.now(timezone.utc).isoformat(),
 		}
 

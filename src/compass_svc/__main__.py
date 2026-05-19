@@ -28,9 +28,7 @@ def main() -> None:
 	if not compass.initialize():
 		logger.warning("Sensor not available — running in degraded mode")
 
-	# uvicorn handles signal-based graceful shutdown
 	serve(compass, HTTP_PORT)
-
 
 
 if __name__ == "__main__":

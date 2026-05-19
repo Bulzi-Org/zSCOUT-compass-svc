@@ -1,6 +1,10 @@
 """Unit tests for HTTP REST+SSE server endpoints."""
 
 import json
+import socket
+import threading
+import time
+import urllib.request
 import pytest
 
 from compass_svc.i2c_driver import STATUS_DRDY
@@ -49,33 +53,53 @@ class TestGetAxes:
 
 
 class TestStreamHeadings:
-	def test_stream_endpoint_registered(self, compass_service):
-		"""Verify SSE stream route is registered in the FastAPI app."""
+	def test_stream_returns_sse_events(self, compass_service):
+		"""Verify the SSE endpoint streams heading events via a live server."""
+		import uvicorn
 		from compass_svc.server import create_app
 
 		app = create_app(compass_service)
-		route_paths = [route.path for route in app.routes]
-		assert "/api/stream/headings" in route_paths
 
-	def test_stream_heading_data_format(self, compass_service):
-		"""Test the heading data format that SSE would emit."""
-		# Verify the heading data can be serialized correctly for SSE
-		data = compass_service.read_heading()
-		payload = {
-			"heading_degrees": data.heading_degrees,
-			"x": data.x_raw,
-			"y": data.y_raw,
-			"z": data.z_raw,
-			"temperature": data.temperature_celsius,
-			"timestamp": data.timestamp_utc,
-		}
-		# Verify it's JSON-serializable
-		serialized = json.dumps(payload)
-		parsed = json.loads(serialized)
+		# Find a free port
+		with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+			s.bind(("127.0.0.1", 0))
+			port = s.getsockname()[1]
 
-		assert 0.0 <= parsed["heading_degrees"] < 360.0
-		assert parsed["x"] == 100
-		assert parsed["y"] == 200
-		assert parsed["z"] == 300
-		assert "temperature" in parsed
-		assert parsed["timestamp"] != ""
+		config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
+		server = uvicorn.Server(config)
+		t = threading.Thread(target=server.run, daemon=True)
+		t.start()
+
+		# Wait for server to accept connections
+		for _ in range(50):
+			try:
+				with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+					break
+			except OSError:
+				time.sleep(0.1)
+
+		try:
+			events = []
+			resp = urllib.request.urlopen(
+				f"http://127.0.0.1:{port}/api/stream/headings?interval_ms=10",
+				timeout=5,
+			)
+			for _ in range(200):  # safety limit
+				line = resp.readline().decode().strip()
+				if line.startswith("data:"):
+					events.append(json.loads(line[len("data:"):]))
+				if len(events) >= 3:
+					break
+			resp.close()
+		finally:
+			server.should_exit = True
+			t.join(timeout=3)
+
+		assert len(events) >= 3
+		for event in events[:3]:
+			assert 0.0 <= event["heading_degrees"] < 360.0
+			assert event["x"] == 100
+			assert event["y"] == 200
+			assert event["z"] == 300
+			assert "temperature" in event
+			assert event["timestamp"] != ""

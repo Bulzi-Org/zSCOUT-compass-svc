@@ -69,8 +69,6 @@ pyproject.toml                 # Project metadata, dependencies
 - Always use the SpecKit workflow and commit on each completed step for all new code changes.
 - Never commit secrets, `.env` files, or hardcoded credentials.
 - Docker images must target ARM64 for CM5 deployment.
-- Generated protobuf code (compass_pb2.py, compass_pb2_grpc.py) must be committed to the repo.
-- After regenerating protobuf, fix the import in compass_pb2_grpc.py to use `from compass_svc.generated import compass_pb2`.
 - Reference hardware spec IDs in doc comments when implementing spec requirements.
 - Environment variables for configuration: I2C_BUS, I2C_ADDRESS, HTTP_PORT.
 

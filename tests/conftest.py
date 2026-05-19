@@ -49,7 +49,6 @@ def compass_service(driver_with_mock_bus):
 @pytest.fixture
 def test_client(compass_service):
 	"""Create a FastAPI TestClient with mocked compass service."""
-	from httpx import ASGITransport
 	from starlette.testclient import TestClient
 	from compass_svc.server import create_app
 	app = create_app(compass_service)

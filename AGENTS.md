@@ -2,7 +2,7 @@
 
 ## Project summary
 
-Tier 2 hardware service container that owns the QMC5883L magnetometer via I2C (`/dev/i2c-1`, address `0x0d`) and exposes compass heading data through a gRPC API on port 5100. Part of the zSCOUT three-tier architecture — all application containers consume heading data through this service's API rather than accessing I2C directly.
+Tier 2 hardware service container that owns the QMC5883L magnetometer via I2C (`/dev/i2c-1`, address `0x0d`) and exposes compass heading data through an HTTP REST+SSE API on port 5100. Part of the zSCOUT three-tier architecture — all application containers consume heading data through this service's API rather than accessing I2C directly.
 
 ## Commands
 
@@ -10,38 +10,32 @@ Tier 2 hardware service container that owns the QMC5883L magnetometer via I2C (`
 - Test: `pytest tests/`
 - Run app: `python -m compass_svc`
 - Lint/format: `python -m py_compile src/compass_svc/*.py`
-- Generate protobuf: `python -m grpc_tools.protoc -Isrc/proto --python_out=src/compass_svc/generated --grpc_python_out=src/compass_svc/generated src/proto/compass.proto`
 - Container build: `docker build -f deploy/Dockerfile .`
-- Smoke test: `grpcurl -plaintext localhost:5100 zscout.compass.v1.CompassService/GetStatus`
+- Smoke test: `curl http://localhost:5100/api/status`
 
 ## Tech stack
 
-- Python 3.12, grpcio, grpcio-tools, protobuf
+- Python 3.12, FastAPI, uvicorn, sse-starlette
 - smbus2 for I2C access to QMC5883L magnetometer
-- pytest for testing
+- pytest, httpx for testing
 - Docker (debian:bookworm-slim, ARM64 build), targets Raspberry Pi CM5
 
 ## Project structure
 
 ```text
 src/
-  proto/
-    compass.proto              # gRPC service definition
   compass_svc/
     __init__.py
-    generated/                 # protoc-generated Python code
-      compass_pb2.py
-      compass_pb2_grpc.py
     i2c_driver.py              # QMC5883L register-level I2C access
     compass.py                 # Heading calculation, temperature, status logic
-    server.py                  # gRPC server implementation
+    server.py                  # FastAPI HTTP REST+SSE server
     config.py                  # Environment variable configuration
     __main__.py                # Entry point
 tests/
   conftest.py                  # Shared fixtures, mock I2C
   test_i2c_driver.py           # I2C driver unit tests
   test_compass.py              # Heading calculation, edge cases
-  test_server.py               # gRPC endpoint tests
+  test_server.py               # REST+SSE endpoint tests
 deploy/
   Dockerfile                   # ARM64 build
   docker-compose.yml           # Service definition with device mapping
@@ -55,7 +49,7 @@ pyproject.toml                 # Project metadata, dependencies
 
 ## Architecture rules
 
-- Keep transport layers thin: gRPC servicer delegates to CompassService.
+- Keep transport layers thin: FastAPI endpoints delegate to CompassService.
 - Keep business logic in compass.py, not in server.py or i2c_driver.py.
 - Isolate I2C hardware access behind i2c_driver.py interface.
 - Handle I2C failures explicitly — never crash, return degraded/unavailable status.
@@ -78,7 +72,7 @@ pyproject.toml                 # Project metadata, dependencies
 - Generated protobuf code (compass_pb2.py, compass_pb2_grpc.py) must be committed to the repo.
 - After regenerating protobuf, fix the import in compass_pb2_grpc.py to use `from compass_svc.generated import compass_pb2`.
 - Reference hardware spec IDs in doc comments when implementing spec requirements.
-- Environment variables for configuration: I2C_BUS, I2C_ADDRESS, GRPC_PORT.
+- Environment variables for configuration: I2C_BUS, I2C_ADDRESS, HTTP_PORT.
 
 ## Testing
 
@@ -87,7 +81,7 @@ pyproject.toml                 # Project metadata, dependencies
 - Unit tests mock smbus2 for I2C — no hardware required.
 - Test heading calculation edge cases (0°, 90°, 180°, 270°).
 - Test overflow detection and all-zero detection.
-- Test gRPC endpoints with mocked I2C layer.
+- Test REST endpoints with mocked I2C layer.
 
 ## Git workflow
 

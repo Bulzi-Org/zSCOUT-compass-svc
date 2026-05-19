@@ -1,85 +1,71 @@
-"""Unit tests for gRPC server endpoints."""
+"""Unit tests for HTTP REST+SSE server endpoints."""
 
+import json
 import pytest
-from unittest.mock import MagicMock
-from concurrent import futures
 
-import grpc
-
-from compass_svc.compass import CompassService
-from compass_svc.i2c_driver import QMC5883L, STATUS_DRDY
-from compass_svc.server import CompassServicer, serve
-from compass_svc.generated import compass_pb2, compass_pb2_grpc
-from tests.conftest import make_i2c_block_data
-
-
-@pytest.fixture
-def grpc_server_and_channel(driver_with_mock_bus):
-	"""Start a gRPC server with mock I2C and return (channel, stub)."""
-	compass = CompassService(driver_with_mock_bus)
-	server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
-	compass_pb2_grpc.add_CompassServiceServicer_to_server(
-		CompassServicer(compass), server
-	)
-	port = server.add_insecure_port("[::]:0")
-	server.start()
-
-	channel = grpc.insecure_channel(f"localhost:{port}")
-	stub = compass_pb2_grpc.CompassServiceStub(channel)
-
-	yield stub
-
-	channel.close()
-	server.stop(grace=0)
-
-
-class TestGetHeading:
-	def test_returns_heading(self, grpc_server_and_channel):
-		stub = grpc_server_and_channel
-		response = stub.GetHeading(compass_pb2.GetHeadingRequest())
-
-		assert 0.0 <= response.heading_degrees < 360.0
-		assert response.x_raw == 100
-		assert response.y_raw == 200
-		assert response.z_raw == 300
-		assert response.timestamp_utc != ""
-
-
-class TestStreamHeadings:
-	def test_stream_returns_updates(self, grpc_server_and_channel):
-		stub = grpc_server_and_channel
-		request = compass_pb2.StreamHeadingsRequest(interval_ms=50)
-
-		updates = []
-		for update in stub.StreamHeadings(request):
-			updates.append(update)
-			if len(updates) >= 3:
-				break
-
-		assert len(updates) == 3
-		for i, update in enumerate(updates):
-			assert 0.0 <= update.heading_degrees < 360.0
-			assert update.sample_number == i + 1
-			assert update.timestamp_utc != ""
-
-
-class TestGetRawAxes:
-	def test_returns_raw_values(self, grpc_server_and_channel):
-		stub = grpc_server_and_channel
-		response = stub.GetRawAxes(compass_pb2.GetRawAxesRequest())
-
-		assert response.x_raw == 100
-		assert response.y_raw == 200
-		assert response.z_raw == 300
-		assert response.status_register == STATUS_DRDY
+from compass_svc.i2c_driver import STATUS_DRDY
 
 
 class TestGetStatus:
-	def test_returns_healthy_status(self, grpc_server_and_channel):
-		stub = grpc_server_and_channel
-		response = stub.GetStatus(compass_pb2.GetStatusRequest())
+	def test_returns_healthy_status(self, test_client):
+		response = test_client.get("/api/status")
 
-		assert response.device_found is True
-		assert response.i2c_bus == "1"
-		assert response.device_address == "0x0d"
-		assert response.status == "healthy"
+		assert response.status_code == 200
+		data = response.json()
+		assert data["status"] == "healthy"
+		assert data["device_address"] == "0x0d"
+		assert data["i2c_bus"] == 1
+		assert data["device_found"] is True
+		assert data["overflow"] is False
+		assert "timestamp" in data
+
+
+class TestGetHeading:
+	def test_returns_heading(self, test_client):
+		response = test_client.get("/api/heading")
+
+		assert response.status_code == 200
+		data = response.json()
+		assert 0.0 <= data["heading_degrees"] < 360.0
+		assert data["x"] == 100
+		assert data["y"] == 200
+		assert data["z"] == 300
+		assert "temperature" in data
+		assert "overflow" in data
+		assert data["timestamp"] != ""
+
+
+class TestGetAxes:
+	def test_returns_raw_values(self, test_client):
+		response = test_client.get("/api/axes")
+
+		assert response.status_code == 200
+		data = response.json()
+		assert data["x"] == 100
+		assert data["y"] == 200
+		assert data["z"] == 300
+		assert data["status_register"] == f"0x{STATUS_DRDY:02x}"
+		assert "timestamp" in data
+
+
+class TestStreamHeadings:
+	def test_stream_returns_sse_events(self, test_client):
+		with test_client.stream("GET", "/api/stream/headings?interval_ms=50") as response:
+			assert response.status_code == 200
+			assert "text/event-stream" in response.headers["content-type"]
+
+			events = []
+			for line in response.iter_lines():
+				if line.startswith("data:"):
+					payload = json.loads(line[len("data:"):].strip())
+					events.append(payload)
+					if len(events) >= 3:
+						break
+
+			assert len(events) == 3
+			for event in events:
+				assert 0.0 <= event["heading_degrees"] < 360.0
+				assert "x" in event
+				assert "y" in event
+				assert "z" in event
+				assert "timestamp" in event

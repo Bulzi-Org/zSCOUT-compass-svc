@@ -37,3 +37,21 @@ def driver_with_mock_bus(mock_smbus):
 	driver._bus = mock_smbus
 	driver._device_found = True
 	return driver
+
+
+@pytest.fixture
+def compass_service(driver_with_mock_bus):
+	"""Create a CompassService with a mocked I2C driver."""
+	from compass_svc.compass import CompassService
+	return CompassService(driver_with_mock_bus)
+
+
+@pytest.fixture
+def test_client(compass_service):
+	"""Create a FastAPI TestClient with mocked compass service."""
+	from httpx import ASGITransport
+	from starlette.testclient import TestClient
+	from compass_svc.server import create_app
+	app = create_app(compass_service)
+	with TestClient(app) as client:
+		yield client

@@ -1,6 +1,6 @@
 # zSCOUT Compass Hardware Service
 
-Tier 2 hardware service container that owns the QMC5883L magnetometer via I2C and exposes compass heading data through a gRPC API on port 5100.
+Tier 2 hardware service container that owns the QMC5883L magnetometer via I2C and exposes compass heading data through an HTTP REST+SSE API on port 5100.
 
 ## Architecture
 
@@ -8,23 +8,79 @@ Tier 2 hardware service container that owns the QMC5883L magnetometer via I2C an
 Host OS (Tier 1) → /dev/i2c-1 (I2C bus)
     │
     ▼ --device /dev/i2c-1
-zSCOUT-compass-svc (Tier 2) → gRPC :5100
+zSCOUT-compass-svc (Tier 2) → HTTP REST+SSE :5100
     │
     ├── zscout-scanner (needs heading for direction-of-arrival)
     ├── zscout-hw-test (validates compass hardware)
     └── zscout-config-agent (status/config)
 ```
 
-## gRPC API (port 5100)
+## REST+SSE API (port 5100)
 
-| RPC | Type | Description |
-|---|---|---|
-| `GetHeading` | Unary | Current heading snapshot (0–360°), raw XYZ, temperature |
-| `StreamHeadings` | Server stream | Continuous heading updates at configurable rate |
-| `GetRawAxes` | Unary | Raw X, Y, Z axis values + status register |
-| `GetStatus` | Unary | Device health check (healthy/degraded/unavailable) |
+### `GET /api/status`
 
-Proto definition: `src/proto/compass.proto`
+Device health check.
+
+```json
+{
+  "status": "healthy",
+  "device_address": "0x0d",
+  "i2c_bus": 1,
+  "device_found": true,
+  "overflow": false,
+  "timestamp": "2026-05-19T05:30:00+00:00"
+}
+```
+
+### `GET /api/heading`
+
+Current heading snapshot.
+
+```json
+{
+  "heading_degrees": 127.4,
+  "x": 1234,
+  "y": -567,
+  "z": 890,
+  "temperature": 23.5,
+  "overflow": false,
+  "timestamp": "2026-05-19T05:30:00+00:00"
+}
+```
+
+### `GET /api/axes`
+
+Raw axis values.
+
+```json
+{
+  "x": 1234,
+  "y": -567,
+  "z": 890,
+  "status_register": "0x01",
+  "timestamp": "2026-05-19T05:30:00+00:00"
+}
+```
+
+### `GET /api/stream/headings` (SSE)
+
+Server-Sent Events stream of continuous heading updates.
+
+Query parameter: `?interval_ms=100` (default: 100ms, min: 10ms, max: 10000ms)
+
+```
+event: heading
+data: {"heading_degrees": 127.4, "x": 1234, "y": -567, "z": 890, "temperature": 23.5, "timestamp": "..."}
+
+event: heading
+data: {"heading_degrees": 128.1, ...}
+```
+
+### OpenAPI Documentation
+
+FastAPI provides automatic interactive API docs at:
+- Swagger UI: `http://localhost:5100/docs`
+- ReDoc: `http://localhost:5100/redoc`
 
 ## Quick Start
 
@@ -38,18 +94,17 @@ source .venv/bin/activate
 # Install dependencies
 pip install -e ".[dev]"
 
-# Generate protobuf code
-python -m grpc_tools.protoc \
-    -Isrc/proto \
-    --python_out=src/compass_svc/generated \
-    --grpc_python_out=src/compass_svc/generated \
-    src/proto/compass.proto
-
 # Run tests (no hardware required — uses mock I2C)
 pytest tests/
 
 # Run the service (requires /dev/i2c-1 or runs in degraded mode)
 python -m compass_svc
+
+# Test with curl
+curl http://localhost:5100/api/status
+curl http://localhost:5100/api/heading
+curl http://localhost:5100/api/axes
+curl -N http://localhost:5100/api/stream/headings?interval_ms=500
 ```
 
 ### Docker
@@ -59,7 +114,7 @@ python -m compass_svc
 docker build -f deploy/Dockerfile -t zscout-compass-svc .
 
 # Run (with I2C device access)
-docker run --rm --device /dev/i2c-1 -e GRPC_PORT=5100 zscout-compass-svc
+docker run --rm --device /dev/i2c-1 -e HTTP_PORT=5100 zscout-compass-svc
 ```
 
 ### Docker Compose
@@ -74,7 +129,7 @@ docker compose -f deploy/docker-compose.yml up
 |---|---|---|
 | `I2C_BUS` | `1` | I2C bus number |
 | `I2C_ADDRESS` | `0x0d` | QMC5883L I2C address |
-| `GRPC_PORT` | `5100` | gRPC server port |
+| `HTTP_PORT` | `5100` | HTTP server port |
 | `STREAM_INTERVAL_MS` | `100` | Default streaming interval (ms) |
 
 ## Hardware
@@ -92,7 +147,7 @@ Two GitHub Actions workflows automate testing, image builds, and publishing.
 
 Runs on **every push to `main`** and **every pull request** targeting `main`.
 
-1. **test** — Sets up Python 3.11, installs the package with dev dependencies, and runs `pytest`. Generated protobuf files are committed to the repo, so no codegen step is needed.
+1. **test** — Sets up Python 3.11, installs the package with dev dependencies, and runs `pytest`.
 2. **docker-build** — After tests pass, builds the ARM64 Docker image via QEMU and Buildx (`deploy/Dockerfile`) **without pushing**. This catches Dockerfile, dependency, or build-context issues before merge.
 
 ### Publish (`.github/workflows/publish.yml`)
@@ -115,12 +170,12 @@ Image tags produced:
 - **Base**: `debian:bookworm-slim`
 - **Platform**: `linux/arm64` (cross-built via QEMU on GitHub-hosted runners)
 - **Build context**: repo root; Dockerfile at `deploy/Dockerfile`
-- **Build-time steps**: installs Python 3.11, project dependencies, and runs `grpc_tools.protoc` to generate gRPC stubs inside the image
+- **Build-time steps**: installs Python 3.12 and project dependencies (FastAPI, uvicorn, sse-starlette)
 - **Runtime**: `python -m compass_svc` on port 5100
 
 ### Adding CI Checks
 
-If you modify the Dockerfile, protobuf definitions, or Python dependencies, the CI workflow will automatically verify the Docker image still builds. No manual Docker build is required before opening a PR.
+If you modify the Dockerfile or Python dependencies, the CI workflow will automatically verify the Docker image still builds. No manual Docker build is required before opening a PR.
 
 ## Graceful Degradation
 

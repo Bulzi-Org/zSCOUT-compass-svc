@@ -130,5 +130,6 @@ class CompassService:
 			"i2c_bus": str(self._driver.bus_number),
 			"device_address": f"0x{self._driver.address:02x}",
 			"data_available": bool(reading.status & STATUS_DRDY),
+			"overflow": bool(reading.status & STATUS_OVL),
 			"status": status,
 		}

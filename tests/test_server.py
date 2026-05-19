@@ -1,85 +1,105 @@
-"""Unit tests for gRPC server endpoints."""
+"""Unit tests for HTTP REST+SSE server endpoints."""
 
+import json
+import socket
+import threading
+import time
+import urllib.request
 import pytest
-from unittest.mock import MagicMock
-from concurrent import futures
 
-import grpc
-
-from compass_svc.compass import CompassService
-from compass_svc.i2c_driver import QMC5883L, STATUS_DRDY
-from compass_svc.server import CompassServicer, serve
-from compass_svc.generated import compass_pb2, compass_pb2_grpc
-from tests.conftest import make_i2c_block_data
-
-
-@pytest.fixture
-def grpc_server_and_channel(driver_with_mock_bus):
-	"""Start a gRPC server with mock I2C and return (channel, stub)."""
-	compass = CompassService(driver_with_mock_bus)
-	server = grpc.server(futures.ThreadPoolExecutor(max_workers=2))
-	compass_pb2_grpc.add_CompassServiceServicer_to_server(
-		CompassServicer(compass), server
-	)
-	port = server.add_insecure_port("[::]:0")
-	server.start()
-
-	channel = grpc.insecure_channel(f"localhost:{port}")
-	stub = compass_pb2_grpc.CompassServiceStub(channel)
-
-	yield stub
-
-	channel.close()
-	server.stop(grace=0)
-
-
-class TestGetHeading:
-	def test_returns_heading(self, grpc_server_and_channel):
-		stub = grpc_server_and_channel
-		response = stub.GetHeading(compass_pb2.GetHeadingRequest())
-
-		assert 0.0 <= response.heading_degrees < 360.0
-		assert response.x_raw == 100
-		assert response.y_raw == 200
-		assert response.z_raw == 300
-		assert response.timestamp_utc != ""
-
-
-class TestStreamHeadings:
-	def test_stream_returns_updates(self, grpc_server_and_channel):
-		stub = grpc_server_and_channel
-		request = compass_pb2.StreamHeadingsRequest(interval_ms=50)
-
-		updates = []
-		for update in stub.StreamHeadings(request):
-			updates.append(update)
-			if len(updates) >= 3:
-				break
-
-		assert len(updates) == 3
-		for i, update in enumerate(updates):
-			assert 0.0 <= update.heading_degrees < 360.0
-			assert update.sample_number == i + 1
-			assert update.timestamp_utc != ""
-
-
-class TestGetRawAxes:
-	def test_returns_raw_values(self, grpc_server_and_channel):
-		stub = grpc_server_and_channel
-		response = stub.GetRawAxes(compass_pb2.GetRawAxesRequest())
-
-		assert response.x_raw == 100
-		assert response.y_raw == 200
-		assert response.z_raw == 300
-		assert response.status_register == STATUS_DRDY
+from compass_svc.i2c_driver import STATUS_DRDY
 
 
 class TestGetStatus:
-	def test_returns_healthy_status(self, grpc_server_and_channel):
-		stub = grpc_server_and_channel
-		response = stub.GetStatus(compass_pb2.GetStatusRequest())
+	def test_returns_healthy_status(self, test_client):
+		response = test_client.get("/api/status")
 
-		assert response.device_found is True
-		assert response.i2c_bus == "1"
-		assert response.device_address == "0x0d"
-		assert response.status == "healthy"
+		assert response.status_code == 200
+		data = response.json()
+		assert data["status"] == "healthy"
+		assert data["device_address"] == "0x0d"
+		assert data["i2c_bus"] == 1
+		assert data["device_found"] is True
+		assert data["overflow"] is False
+		assert "timestamp" in data
+
+
+class TestGetHeading:
+	def test_returns_heading(self, test_client):
+		response = test_client.get("/api/heading")
+
+		assert response.status_code == 200
+		data = response.json()
+		assert 0.0 <= data["heading_degrees"] < 360.0
+		assert data["x"] == 100
+		assert data["y"] == 200
+		assert data["z"] == 300
+		assert "temperature" in data
+		assert "overflow" in data
+		assert data["timestamp"] != ""
+
+
+class TestGetAxes:
+	def test_returns_raw_values(self, test_client):
+		response = test_client.get("/api/axes")
+
+		assert response.status_code == 200
+		data = response.json()
+		assert data["x"] == 100
+		assert data["y"] == 200
+		assert data["z"] == 300
+		assert data["status_register"] == f"0x{STATUS_DRDY:02x}"
+		assert "timestamp" in data
+
+
+class TestStreamHeadings:
+	def test_stream_returns_sse_events(self, compass_service):
+		"""Verify the SSE endpoint streams heading events via a live server."""
+		import uvicorn
+		from compass_svc.server import create_app
+
+		app = create_app(compass_service)
+
+		# Find a free port
+		with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+			s.bind(("127.0.0.1", 0))
+			port = s.getsockname()[1]
+
+		config = uvicorn.Config(app, host="127.0.0.1", port=port, log_level="error")
+		server = uvicorn.Server(config)
+		t = threading.Thread(target=server.run, daemon=True)
+		t.start()
+
+		# Wait for server to accept connections
+		for _ in range(50):
+			try:
+				with socket.create_connection(("127.0.0.1", port), timeout=0.1):
+					break
+			except OSError:
+				time.sleep(0.1)
+
+		try:
+			events = []
+			resp = urllib.request.urlopen(
+				f"http://127.0.0.1:{port}/api/stream/headings?interval_ms=10",
+				timeout=5,
+			)
+			for _ in range(200):  # safety limit
+				line = resp.readline().decode().strip()
+				if line.startswith("data:"):
+					events.append(json.loads(line[len("data:"):]))
+				if len(events) >= 3:
+					break
+			resp.close()
+		finally:
+			server.should_exit = True
+			t.join(timeout=3)
+
+		assert len(events) >= 3
+		for event in events[:3]:
+			assert 0.0 <= event["heading_degrees"] < 360.0
+			assert event["x"] == 100
+			assert event["y"] == 200
+			assert event["z"] == 300
+			assert "temperature" in event
+			assert event["timestamp"] != ""

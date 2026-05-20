@@ -37,9 +37,9 @@ def create_app(compass: CompassService) -> FastAPI:
 		status_info = compass.get_status()
 		return {
 			"status": status_info["status"],
-			"device_address": status_info["device_address"],
-			"i2c_bus": int(status_info["i2c_bus"]),
-			"device_found": status_info["device_found"],
+			"deviceAddress": status_info["deviceAddress"],
+			"i2cBus": int(status_info["i2cBus"]),
+			"deviceFound": status_info["deviceFound"],
 			"overflow": status_info["overflow"],
 			"timestamp": datetime.now(timezone.utc).isoformat(),
 		}
@@ -49,7 +49,7 @@ def create_app(compass: CompassService) -> FastAPI:
 		"""Current heading snapshot."""
 		data = compass.read_heading()
 		return {
-			"heading_degrees": data.heading_degrees,
+			"headingDegrees": data.heading_degrees,
 			"x": data.x_raw,
 			"y": data.y_raw,
 			"z": data.z_raw,
@@ -66,23 +66,23 @@ def create_app(compass: CompassService) -> FastAPI:
 			"x": x,
 			"y": y,
 			"z": z,
-			"status_register": f"0x{status_reg:02x}",
+			"statusRegister": f"0x{status_reg:02x}",
 			"timestamp": datetime.now(timezone.utc).isoformat(),
 		}
 
 	@app.get("/api/stream/headings")
 	async def stream_headings(
-		interval_ms: int = Query(default=100, ge=10, le=10000),
+		intervalMs: int = Query(default=100, ge=10, le=10000, alias="intervalMs"),
 	) -> EventSourceResponse:
 		"""SSE stream of continuous heading updates."""
-		interval_sec = interval_ms / 1000.0
+		interval_sec = intervalMs / 1000.0
 
 		async def event_generator():
 			try:
 				while True:
 					data = compass.read_heading()
 					payload = json.dumps({
-						"heading_degrees": data.heading_degrees,
+						"headingDegrees": data.heading_degrees,
 						"x": data.x_raw,
 						"y": data.y_raw,
 						"z": data.z_raw,

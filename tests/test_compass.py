@@ -123,9 +123,9 @@ class TestCompassService:
 		compass = CompassService(driver_with_mock_bus)
 		status_info = compass.get_status()
 
-		assert status_info["device_found"] is True
-		assert status_info["i2c_bus"] == "1"
-		assert status_info["device_address"] == "0x0d"
+		assert status_info["deviceFound"] is True
+		assert status_info["i2cBus"] == "1"
+		assert status_info["deviceAddress"] == "0x0d"
 		assert status_info["status"] == "healthy"
 
 	def test_get_status_unavailable(self):
@@ -134,5 +134,5 @@ class TestCompassService:
 		compass = CompassService(driver)
 		status_info = compass.get_status()
 
-		assert status_info["device_found"] is False
+		assert status_info["deviceFound"] is False
 		assert status_info["status"] == "unavailable"

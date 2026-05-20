@@ -126,10 +126,10 @@ class CompassService:
 		status = determine_status(reading, self._driver.device_found)
 
 		return {
-			"device_found": self._driver.device_found,
-			"i2c_bus": str(self._driver.bus_number),
-			"device_address": f"0x{self._driver.address:02x}",
-			"data_available": bool(reading.status & STATUS_DRDY),
+			"deviceFound": self._driver.device_found,
+			"i2cBus": str(self._driver.bus_number),
+			"deviceAddress": f"0x{self._driver.address:02x}",
+			"dataAvailable": bool(reading.status & STATUS_DRDY),
 			"overflow": bool(reading.status & STATUS_OVL),
 			"status": status,
 		}

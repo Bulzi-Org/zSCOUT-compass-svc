@@ -6,63 +6,64 @@ Tier 2 hardware service container that owns the QMC5883L magnetometer via I2C (`
 
 ## Commands
 
-- Build: `pip install -e .`
-- Test: `pytest tests/`
-- Run app: `python -m compass_svc`
-- Lint/format: `python -m py_compile src/compass_svc/*.py`
+- Build: `dotnet build zSCOUT-compass-svc.slnx`
+- Test: `dotnet test zSCOUT-compass-svc.slnx`
+- Run app: `dotnet run --project src/ZScout.CompassSvc`
+- Publish: `dotnet publish -c Release -o out src/ZScout.CompassSvc`
 - Container build: `docker build -f deploy/Dockerfile .`
 - Smoke test: `curl http://localhost:5100/api/status`
 
 ## Tech stack
 
-- Python 3.12, FastAPI, uvicorn, sse-starlette
-- smbus2 for I2C access to QMC5883L magnetometer
-- pytest, httpx for testing
+- C# / .NET 10, ASP.NET Core Minimal API
+- System.Device.Gpio (System.Device.I2c) for I2C access to QMC5883L magnetometer
+- xUnit, Moq, Microsoft.AspNetCore.Mvc.Testing for testing
 - Docker (debian:bookworm-slim, ARM64 build), targets Raspberry Pi CM5
 
 ## Project structure
 
 ```text
 src/
-  compass_svc/
-    __init__.py
-    i2c_driver.py              # QMC5883L register-level I2C access
-    compass.py                 # Heading calculation, temperature, status logic
-    server.py                  # FastAPI HTTP REST+SSE server
-    config.py                  # Environment variable configuration
-    __main__.py                # Entry point
+  ZScout.CompassSvc/
+    ZScout.CompassSvc.csproj       # Project file with System.Device.Gpio NuGet
+    Program.cs                     # Minimal API setup, DI, endpoints
+    Qmc5883lDriver.cs              # QMC5883L I2C driver + IQmc5883lDriver interface
+    CompassService.cs              # Heading calculation, temperature, status logic
+    HeadingCache.cs                # Channel<T> fan-out for SSE subscribers
+    HeadingReaderService.cs        # IHostedService: continuous I2C polling
 tests/
-  conftest.py                  # Shared fixtures, mock I2C
-  test_i2c_driver.py           # I2C driver unit tests
-  test_compass.py              # Heading calculation, edge cases
-  test_server.py               # REST+SSE endpoint tests
+  ZScout.CompassSvc.Tests/
+    ZScout.CompassSvc.Tests.csproj # Test project (xUnit, Moq)
+    CompassServiceTests.cs         # Business logic unit tests
+    EndpointTests.cs               # REST+SSE endpoint integration tests
 deploy/
-  Dockerfile                   # ARM64 build
-  docker-compose.yml           # Service definition with device mapping
+  Dockerfile                       # ARM64 multi-stage build
+  docker-compose.yml               # Service definition with device mapping
 .github/
   workflows/
-    publish.yml                # GHCR publish on push to main / tags
+    ci.yml                         # .NET build/test + Docker build on PR
+    publish.yml                    # GHCR publish on push to main / tags
 .specify/
-  specs/                       # SpecKit specification artifacts
-pyproject.toml                 # Project metadata, dependencies
+  specs/                           # SpecKit specification artifacts
+zSCOUT-compass-svc.slnx           # XML solution file
 ```
 
 ## Architecture rules
 
-- Keep transport layers thin: FastAPI endpoints delegate to CompassService.
-- Keep business logic in compass.py, not in server.py or i2c_driver.py.
-- Isolate I2C hardware access behind i2c_driver.py interface.
+- Keep transport layers thin: Minimal API endpoints delegate to CompassService.
+- Keep business logic in CompassService.cs, not in Program.cs or Qmc5883lDriver.cs.
+- Isolate I2C hardware access behind IQmc5883lDriver interface.
 - Handle I2C failures explicitly — never crash, return degraded/unavailable status.
 - Single service owns the QMC5883L device — no bus contention management needed.
 
 ## Code style
 
-- Tab indentation for Python code.
-- Use type hints on all function signatures.
-- Use dataclasses for structured data (RawReading, HeadingData).
-- Use structured logging with `logging` module.
-- Keep public APIs documented with docstrings.
-- Prefer `try/except` with specific error handling over broad catches where feasible.
+- Tab indentation for C# code.
+- Use type annotations on all method signatures (nullable reference types enabled).
+- Use records for structured data (RawReading, HeadingData).
+- Use structured logging with `ILogger<T>`.
+- Keep public APIs documented with XML doc comments.
+- Prefer specific exception handling over broad catches where feasible.
 
 ## Rules
 
@@ -70,23 +71,23 @@ pyproject.toml                 # Project metadata, dependencies
 - Never commit secrets, `.env` files, or hardcoded credentials.
 - Docker images must target ARM64 for CM5 deployment.
 - Reference hardware spec IDs in doc comments when implementing spec requirements.
-- Environment variables for configuration: I2C_BUS, I2C_ADDRESS, HTTP_PORT.
+- Environment variables for configuration: I2C_BUS, I2C_ADDRESS, HTTP_PORT, STREAM_INTERVAL_MS.
 
 ## Testing
 
-- Test framework: pytest
-- Test command: `pytest tests/`
-- Unit tests mock smbus2 for I2C — no hardware required.
+- Test framework: xUnit + Moq
+- Test command: `dotnet test zSCOUT-compass-svc.slnx`
+- Unit tests mock IQmc5883lDriver for I2C — no hardware required.
 - Test heading calculation edge cases (0°, 90°, 180°, 270°).
 - Test overflow detection and all-zero detection.
-- Test REST endpoints with mocked I2C layer.
+- Test REST endpoints with WebApplicationFactory and mocked I2C layer.
 
 ## Git workflow
 
 - Branch from `main`.
 - Use conventional commit messages: `feat:`, `fix:`, `chore:`, `docs:`, `test:`
 - Do not commit directly to `main`.
-- Verify `pytest tests/` passes before pushing.
+- Verify `dotnet test` passes before pushing.
 
 ## Done criteria
 

@@ -17,18 +17,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Set up .NET 10
+        uses: actions/setup-dotnet@v4
         with:
-          python-version: "3.11"
+          dotnet-version: "10.0.x"
 
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install .[dev]
+      - name: Restore dependencies
+        run: dotnet restore zSCOUT-compass-svc.slnx
+
+      - name: Build
+        run: dotnet build zSCOUT-compass-svc.slnx --no-restore
 
       - name: Run tests
-        run: pytest
+        run: dotnet test zSCOUT-compass-svc.slnx --no-build --verbosity normal
 
   docker-build:
     runs-on: ubuntu-latest

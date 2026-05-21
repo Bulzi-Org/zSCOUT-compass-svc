@@ -24,11 +24,11 @@ Device health check.
 ```json
 {
   "status": "healthy",
-  "device_address": "0x0d",
-  "i2c_bus": 1,
-  "device_found": true,
+  "deviceAddress": "0x0d",
+  "i2cBus": 1,
+  "deviceFound": true,
   "overflow": false,
-  "timestamp": "2026-05-19T05:30:00+00:00"
+  "timestamp": "2026-05-19T05:30:00.0000000Z"
 }
 ```
 
@@ -38,13 +38,13 @@ Current heading snapshot.
 
 ```json
 {
-  "heading_degrees": 127.4,
+  "headingDegrees": 127.4,
   "x": 1234,
   "y": -567,
   "z": 890,
   "temperature": 23.5,
   "overflow": false,
-  "timestamp": "2026-05-19T05:30:00+00:00"
+  "timestamp": "2026-05-19T05:30:00.0000000Z"
 }
 ```
 
@@ -57,8 +57,8 @@ Raw axis values.
   "x": 1234,
   "y": -567,
   "z": 890,
-  "status_register": "0x01",
-  "timestamp": "2026-05-19T05:30:00+00:00"
+  "statusRegister": "0x01",
+  "timestamp": "2026-05-19T05:30:00.0000000Z"
 }
 ```
 
@@ -66,45 +66,35 @@ Raw axis values.
 
 Server-Sent Events stream of continuous heading updates.
 
-Query parameter: `?interval_ms=100` (default: 100ms, min: 10ms, max: 10000ms)
+Query parameter: `?intervalMs=100` (default: 100ms, min: 10ms, max: 10000ms)
 
 ```
 event: heading
-data: {"heading_degrees": 127.4, "x": 1234, "y": -567, "z": 890, "temperature": 23.5, "timestamp": "..."}
+data: {"headingDegrees": 127.4, "x": 1234, "y": -567, "z": 890, "temperature": 23.5, "timestamp": "..."}
 
 event: heading
-data: {"heading_degrees": 128.1, ...}
+data: {"headingDegrees": 128.1, ...}
 ```
-
-### OpenAPI Documentation
-
-FastAPI provides automatic interactive API docs at:
-- Swagger UI: `http://localhost:5100/docs`
-- ReDoc: `http://localhost:5100/redoc`
 
 ## Quick Start
 
 ### Local Development
 
 ```bash
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install dependencies
-pip install -e ".[dev]"
+# Build
+dotnet build zSCOUT-compass-svc.slnx
 
 # Run tests (no hardware required — uses mock I2C)
-pytest tests/
+dotnet test zSCOUT-compass-svc.slnx
 
 # Run the service (requires /dev/i2c-1 or runs in degraded mode)
-python -m compass_svc
+dotnet run --project src/ZScout.CompassSvc
 
 # Test with curl
 curl http://localhost:5100/api/status
 curl http://localhost:5100/api/heading
 curl http://localhost:5100/api/axes
-curl -N http://localhost:5100/api/stream/headings?interval_ms=500
+curl -N "http://localhost:5100/api/stream/headings?intervalMs=500"
 ```
 
 ### Docker
@@ -139,6 +129,14 @@ docker compose -f deploy/docker-compose.yml up
 - **Configuration**: Continuous mode, 200Hz ODR, 8G range, 512 OSR
 - **Heading**: `atan2(Y, X)` normalized to 0–360°
 
+## Tech Stack
+
+- **Language**: C# / .NET 10
+- **Framework**: ASP.NET Core Minimal API
+- **I2C Library**: System.Device.Gpio (System.Device.I2c)
+- **Testing**: xUnit, Moq, WebApplicationFactory
+- **Docker**: debian:bookworm-slim, ARM64 target
+
 ## CI/CD
 
 Two GitHub Actions workflows automate testing, image builds, and publishing.
@@ -147,8 +145,8 @@ Two GitHub Actions workflows automate testing, image builds, and publishing.
 
 Runs on **every push to `main`** and **every pull request** targeting `main`.
 
-1. **test** — Sets up Python 3.11, installs the package with dev dependencies, and runs `pytest`.
-2. **docker-build** — After tests pass, builds the ARM64 Docker image via QEMU and Buildx (`deploy/Dockerfile`) **without pushing**. This catches Dockerfile, dependency, or build-context issues before merge.
+1. **test** — Sets up .NET 10, restores, builds, and runs `dotnet test`.
+2. **docker-build** — After tests pass, builds the ARM64 Docker image via QEMU and Buildx **without pushing**.
 
 ### Publish (`.github/workflows/publish.yml`)
 
@@ -159,23 +157,6 @@ Builds the ARM64 Docker image and pushes it to GHCR:
 ```
 ghcr.io/bulzi-org/zscout-compass-svc
 ```
-
-Image tags produced:
-- `main` — latest from the main branch
-- `<semver>` / `<major>.<minor>` — from version tags (e.g. `v1.2.3` → `1.2.3`, `1.2`)
-- `sha-<commit>` — every build
-
-### Docker Image Details
-
-- **Base**: `debian:bookworm-slim`
-- **Platform**: `linux/arm64` (cross-built via QEMU on GitHub-hosted runners)
-- **Build context**: repo root; Dockerfile at `deploy/Dockerfile`
-- **Build-time steps**: installs Python 3.12 and project dependencies (FastAPI, uvicorn, sse-starlette)
-- **Runtime**: `python -m compass_svc` on port 5100
-
-### Adding CI Checks
-
-If you modify the Dockerfile or Python dependencies, the CI workflow will automatically verify the Docker image still builds. No manual Docker build is required before opening a PR.
 
 ## Graceful Degradation
 

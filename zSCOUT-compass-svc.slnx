@@ -1,0 +1,4 @@
+<Solution>
+  <Project Path="src/ZScout.CompassSvc/ZScout.CompassSvc.csproj" />
+  <Project Path="tests/ZScout.CompassSvc.Tests/ZScout.CompassSvc.Tests.csproj" />
+</Solution>

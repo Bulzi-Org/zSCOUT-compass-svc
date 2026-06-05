@@ -97,3 +97,18 @@ A change is done when all are true:
 - Tests are added/updated and passing.
 - Build/lint/type checks are passing.
 - PR is reviewed and merged.
+
+
+## Parent Project Rules
+
+This repository is a submodule of the zSCOUT parent project at `~/GitHub/Bulzi-Org/zSCOUT/`.
+Before starting any work, read and follow the project-wide rules in the parent repository:
+
+**File:** `../AGENTS.md` (or `~/GitHub/Bulzi-Org/zSCOUT/AGENTS.md`)
+
+The parent AGENTS.md contains critical instructions for:
+- Kanban board updates (project board status transitions)
+- WSL working directory requirements
+- Cross-repo orchestration conventions
+
+These parent rules apply to ALL zSCOUT submodule repositories and must be followed in addition to this file's repo-specific rules.

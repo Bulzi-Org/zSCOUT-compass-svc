@@ -85,6 +85,7 @@ zSCOUT-compass-svc.slnx           # XML solution file
 ## Git workflow
 
 - Branch from `main`.
+- **Worktrees** must be created in `~/GitHub/Bulzi-Org/zSCOUT/worktrees/` — NEVER in the repo root or submodule directories. Naming: `<repo-short>-<type><issue>` (e.g. `gps-svc-fix40`)
 - Use conventional commit messages: `feat:`, `fix:`, `chore:`, `docs:`, `test:`
 - Do not commit directly to `main`.
 - Verify `dotnet test` passes before pushing.

@@ -74,3 +74,8 @@ coverage/
 TestResults/
 *.trx
 *.coveragexml
+
+# Track MCP config while keeping other editor files ignored
+!.vscode/
+.vscode/*
+!.vscode/mcp.json
